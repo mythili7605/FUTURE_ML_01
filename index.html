@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales & Demand Forecasting Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Chart.js CDN for interactive visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- PapaParse CDN for high-performance CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Lucide Icons for premium modern iconography -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- Left Sidebar: Configuration and Parameters -->
+    <aside class="sidebar">
+      <div class="logo-container">
+        <div class="logo-icon">F</div>
+        <span class="logo-text">ForecasTrend</span>
+      </div>
+
+      <!-- Dataset Upload & Setup -->
+      <h3 class="section-title">Data Source</h3>
+      <button id="load-preloaded-btn" class="btn btn-primary">
+        <i data-lucide="database"></i> Load Workspace Data
+      </button>
+      <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
+      <button id="upload-csv-btn" class="btn">
+        <i data-lucide="upload-cloud"></i> Upload Custom CSV
+      </button>
+
+      <!-- Target Filters -->
+      <h3 class="section-title">Filters</h3>
+      <div class="control-group">
+        <label for="filter-category">Product Category</label>
+        <select id="filter-category" disabled>
+          <option value="All">All Categories</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="filter-subcategory">Sub-Category</label>
+        <select id="filter-subcategory" disabled>
+          <option value="All">All Sub-Categories</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="filter-region">Region</label>
+        <select id="filter-region" disabled>
+          <option value="All">All Regions</option>
+        </select>
+      </div>
+
+      <!-- Forecasting Setup -->
+      <h3 class="section-title">Forecasting Configuration</h3>
+      <div class="control-group">
+        <label for="aggregation-level">Aggregation Level</label>
+        <select id="aggregation-level">
+          <option value="daily">Daily Sales</option>
+          <option value="weekly">Weekly Sales</option>
+          <option value="monthly" selected>Monthly Sales</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="train-split">Train/Test Split</label>
+        <select id="train-split">
+          <option value="0.9">90% Train / 10% Test</option>
+          <option value="0.8" selected>80% Train / 20% Test</option>
+          <option value="0.7">70% Train / 30% Test</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="forecast-periods">Forecast Horizon</label>
+        <input type="number" id="forecast-periods" min="1" max="365" value="12">
+      </div>
+
+      <!-- Hyperparameters Tuning -->
+      <h3 class="section-title">Model Tuning</h3>
+      
+      <!-- Linear Regression tuning -->
+      <div class="hyperparameter-panel" id="params-lr">
+        <div class="range-slider-container">
+          <div class="range-slider-header">
+            <span>Learning Rate</span>
+            <span id="lr-val">0.05</span>
+          </div>
+          <input type="range" id="lr-slider" min="0.001" max="0.5" step="0.005" value="0.05">
+        </div>
+        <div class="range-slider-container">
+          <div class="range-slider-header">
+            <span>Epochs</span>
+            <span id="epochs-val">500</span>
+          </div>
+          <input type="range" id="epochs-slider" min="50" max="2000" step="50" value="500">
+        </div>
+      </div>
+
+      <!-- Holt-Winters tuning -->
+      <div class="hyperparameter-panel" id="params-hw" style="margin-top: 10px;">
+        <div class="range-slider-container">
+          <div class="range-slider-header">
+            <span>Level Alpha (α)</span>
+            <span id="alpha-val">0.2</span>
+          </div>
+          <input type="range" id="alpha-slider" min="0.01" max="0.99" step="0.05" value="0.2">
+        </div>
+        <div class="range-slider-container">
+          <div class="range-slider-header">
+            <span>Trend Beta (β)</span>
+            <span id="beta-val">0.1</span>
+          </div>
+          <input type="range" id="beta-slider" min="0.01" max="0.99" step="0.05" value="0.1">
+        </div>
+        <div class="range-slider-container">
+          <div class="range-slider-header">
+            <span>Seasonal Gamma (γ)</span>
+            <span id="gamma-val">0.3</span>
+          </div>
+          <input type="range" id="gamma-slider" min="0.01" max="0.99" step="0.05" value="0.3">
+        </div>
+      </div>
+
+      <!-- Decision Tree tuning -->
+      <div class="hyperparameter-panel" id="params-dt" style="margin-top: 10px;">
+        <div class="range-slider-container">
+          <div class="range-slider-header">
+            <span>Max Tree Depth</span>
+            <span id="depth-val">5</span>
+          </div>
+          <input type="range" id="depth-slider" min="2" max="15" step="1" value="5">
+        </div>
+      </div>
+
+      <button id="train-models-btn" class="btn btn-primary" style="margin-top: 16px;" disabled>
+        <i data-lucide="play"></i> Train & Forecast
+      </button>
+    </aside>
+
+    <!-- Right Main Panel: Views and Visualizations -->
+    <main class="main-panel">
+      
+      <!-- Top Header Navigation -->
+      <header class="top-header">
+        <nav class="nav-tabs">
+          <button class="tab-link active" data-target="pane-overview" disabled>
+            <i data-lucide="layout-dashboard" style="display:inline; width:16px; margin-right:4px;"></i> Overview & EDA
+          </button>
+          <button class="tab-link" data-target="pane-trainer" disabled>
+            <i data-lucide="cpu" style="display:inline; width:16px; margin-right:4px;"></i> Model Evaluation
+          </button>
+          <button class="tab-link" data-target="pane-forecast" disabled>
+            <i data-lucide="trending-up" style="display:inline; width:16px; margin-right:4px;"></i> Forecast projections
+          </button>
+          <button class="tab-link" data-target="pane-seasonality" disabled>
+            <i data-lucide="calendar-days" style="display:inline; width:16px; margin-right:4px;"></i> Seasonality Features
+          </button>
+        </nav>
+
+        <div class="dataset-status">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">No Dataset Loaded</span>
+        </div>
+      </header>
+
+      <!-- Scrollable Main View Contents -->
+      <section class="content-container">
+        
+        <!-- Welcome / Upload Pane (visible initially) -->
+        <div id="pane-welcome" class="tab-pane active">
+          <div class="upload-welcome-container">
+            <div class="welcome-card">
+              <h2 class="welcome-title">Sales & Demand Forecasting</h2>
+              <p class="welcome-subtitle">Upload transaction data or use pre-loaded workspace files to build your custom ML forecasting models directly in JavaScript.</p>
+              
+              <div class="drop-zone" id="drag-drop-zone">
+                <i data-lucide="upload-cloud" class="drop-zone-icon"></i>
+                <div class="drop-zone-text">Drag & drop your sales CSV here</div>
+                <div class="drop-zone-subtext">Supports columns for Order Date, Sales, Product, Category, and Region</div>
+              </div>
+
+              <div class="or-divider">OR</div>
+
+              <button id="welcome-load-preloaded" class="btn btn-primary" style="margin: 0 auto; min-width: 250px;">
+                <i data-lucide="database"></i> Load Preloaded Retail Sales
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 1. Overview & EDA Pane -->
+        <div id="pane-overview" class="tab-pane">
+          <!-- KPIs -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-icon"><i data-lucide="dollar-sign"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-label">Total Historical Sales</span>
+                <span class="kpi-value" id="kpi-total-sales">$0.00</span>
+              </div>
+            </div>
+            <div class="kpi-card secondary">
+              <div class="kpi-icon"><i data-lucide="shopping-bag"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-label">Total Transactions</span>
+                <span class="kpi-value" id="kpi-total-orders">0</span>
+              </div>
+            </div>
+            <div class="kpi-card accent">
+              <div class="kpi-icon"><i data-lucide="calendar"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-label">Historical Timeframe</span>
+                <span class="kpi-value" id="kpi-timeframe" style="font-size: 1.15rem;">-</span>
+              </div>
+            </div>
+            <div class="kpi-card" style="border-color: rgba(239, 68, 68, 0.2);">
+              <div class="kpi-icon" style="color: var(--danger); background: rgba(239, 68, 68, 0.1);"><i data-lucide="alert-triangle"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-label">Missing Values Checked</span>
+                <span class="kpi-value" id="kpi-missing-vals" style="font-size: 1.25rem;">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts -->
+          <div class="chart-grid">
+            <div class="dashboard-card">
+              <div class="card-header-bar">
+                <h4 class="card-title"><i data-lucide="line-chart" style="color:var(--primary);"></i> Historical Aggregated Sales Trend</h4>
+                <div class="filter-tag-container" id="overview-filter-badges"></div>
+              </div>
+              <div class="chart-container">
+                <canvas id="chart-historical"></canvas>
+              </div>
+            </div>
+            
+            <div class="dashboard-card">
+              <div class="card-header-bar">
+                <h4 class="card-title"><i data-lucide="pie-chart" style="color:var(--secondary);"></i> Category Breakdown</h4>
+              </div>
+              <div class="chart-container">
+                <canvas id="chart-category"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-card">
+            <div class="card-header-bar">
+              <h4 class="card-title"><i data-lucide="bar-chart-3" style="color:var(--accent);"></i> Regional Performance</h4>
+            </div>
+            <div class="chart-container" style="height: 250px;">
+              <canvas id="chart-region"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Model Training & Evaluation Pane -->
+        <div id="pane-trainer" class="tab-pane">
+          <div class="training-visualizer-container">
+            <!-- Model Performance Table -->
+            <div class="dashboard-card" style="grid-column: span 1;">
+              <div class="card-header-bar">
+                <h4 class="card-title"><i data-lucide="gauge" style="color: var(--accent);"></i> Model Performance Comparison (Test Set)</h4>
+              </div>
+              <div class="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Forecasting Model</th>
+                      <th>MAE (Error)</th>
+                      <th>RMSE (Variance)</th>
+                      <th>MAPE (%)</th>
+                      <th>Fit Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="metrics-table-body">
+                    <tr>
+                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                        No models trained yet. Click "Train & Forecast" in the sidebar!
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 15px; line-height: 1.4;">
+                * Models are validated sequentially using a rolling-forward test split. MAE (Mean Absolute Error) measures average prediction deviation. RMSE gives higher weight to larger errors. MAPE is percentage-based relative deviation.
+              </p>
+            </div>
+
+            <!-- Gradient Descent Loss History Chart -->
+            <div class="dashboard-card" style="grid-column: span 1;">
+              <div class="card-header-bar">
+                <h4 class="card-title"><i data-lucide="activity" style="color: var(--primary);"></i> Linear Regression Training Loss (Gradient Descent)</h4>
+              </div>
+              <div class="chart-container">
+                <canvas id="chart-training-loss"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Model Predictions Overlap Chart (validation plot) -->
+          <div class="dashboard-card">
+            <div class="card-header-bar">
+              <h4 class="card-title"><i data-lucide="git-pull-request" style="color: var(--primary);"></i> Validation Set Predictions Overlap (Actuals vs Predictions)</h4>
+            </div>
+            <div class="chart-container">
+              <canvas id="chart-validation-predictions"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Forecast Projections Pane -->
+        <div id="pane-forecast" class="tab-pane">
+          <!-- Forecast Overview Cards -->
+          <div class="forecast-summary-bar">
+            <div class="kpi-card accent">
+              <div class="kpi-icon"><i data-lucide="arrow-up-right"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-label">Projected Sales Total</span>
+                <span class="kpi-value" id="forecast-total-kpi">$0.00</span>
+              </div>
+            </div>
+            <div class="kpi-card secondary">
+              <div class="kpi-icon"><i data-lucide="check-circle-2"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-label">Recommended Model</span>
+                <span class="kpi-value" id="forecast-best-model-kpi" style="font-size: 1.3rem;">N/A</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-icon"><i data-lucide="calendar"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-label">Forecast Horizon</span>
+                <span class="kpi-value" id="forecast-horizon-kpi">0 steps</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Future Forecast Chart -->
+          <div class="dashboard-card" style="margin-bottom: 24px;">
+            <div class="card-header-bar">
+              <h4 class="card-title"><i data-lucide="sparkles" style="color: var(--accent);"></i> Sales Projections (Historical + Future Forecast)</h4>
+            </div>
+            <div class="chart-container" style="height: 400px;">
+              <canvas id="chart-forecast"></canvas>
+            </div>
+          </div>
+
+          <!-- Tabular predictions list -->
+          <div class="dashboard-card">
+            <div class="card-header-bar">
+              <h4 class="card-title"><i data-lucide="table" style="color: var(--secondary);"></i> Forecast Value Breakdown</h4>
+              <button id="export-csv-btn" class="btn" style="padding: 6px 12px; font-size: 0.8rem; margin: 0;">
+                <i data-lucide="download"></i> Export CSV
+              </button>
+            </div>
+            <div class="table-wrapper">
+              <table id="forecast-table">
+                <thead>
+                  <tr>
+                    <th>Future Date</th>
+                    <th>Selected Model Sales Prediction</th>
+                    <th>Linear Regression</th>
+                    <th>Holt-Winters</th>
+                    <th>Decision Tree</th>
+                  </tr>
+                </thead>
+                <tbody id="forecast-table-body">
+                  <tr>
+                    <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                      No forecast generated. Load data and press "Train & Forecast".
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Seasonality Analysis Pane -->
+        <div id="pane-seasonality" class="tab-pane">
+          <div class="chart-grid">
+            <div class="dashboard-card">
+              <div class="card-header-bar">
+                <h4 class="card-title"><i data-lucide="calendar" style="color: var(--primary);"></i> Month-of-Year Seasonality Analysis</h4>
+              </div>
+              <div class="chart-container">
+                <canvas id="chart-month-seasonality"></canvas>
+              </div>
+            </div>
+            <div class="dashboard-card">
+              <div class="card-header-bar">
+                <h4 class="card-title"><i data-lucide="clock" style="color: var(--secondary);"></i> Day-of-Week Seasonality Analysis</h4>
+              </div>
+              <div class="chart-container">
+                <canvas id="chart-dayofweek-seasonality"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-card">
+            <div class="card-header-bar">
+              <h4 class="card-title"><i data-lucide="help-circle" style="color: var(--accent);"></i> Seasonality Interpretation</h4>
+            </div>
+            <div style="font-size: 0.9rem; line-height: 1.6; color: var(--text-main);">
+              <p style="margin-bottom: 12px;"><strong>Cyclical month encoding</strong> allows our Multiple Linear Regression model to understand seasonal peaks. In time series, standard numbers 1 through 12 can confuse models because December (12) is close to January (1), but standard numerical representations place them at opposite ends. Encoding month as a circular function ($\sin$ and $\cos$ projections) preserves this closeness.</p>
+              <p><strong>Holt-Winters (Triple Exponential Smoothing)</strong> tracks the level, trend, and seasonal components directly. It automatically aligns historical seasonal patterns with the future steps. For daily data, it captures the weekly cyclic pattern (7-day period). For monthly data, it maps the yearly cyclicality (12-month period).</p>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Global Loading Screen overlay -->
+      <div id="global-loader" class="loading-overlay">
+        <div class="spinner"></div>
+        <h4 id="loader-title" style="font-family: var(--font-display); font-weight: 600;">Processing Dataset...</h4>
+        <p id="loader-subtitle" style="color: var(--text-muted); font-size: 0.85rem;">Prepping structures</p>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Load main app logic -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
